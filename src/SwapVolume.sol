@@ -20,30 +20,20 @@ contract SwapVolume is BaseHook {
 
     struct SwapVolumeParams {
         uint24 defaultFee;
-        uint24 feeAtMinAmountIn;
-        uint24 feeAtMaxAmountIn;
+        uint24 feeAtMinAmount0;
+        uint24 feeAtMaxAmount0;
+        uint24 feeAtMinAmount1;
+        uint24 feeAtMaxAmount1;
         uint256 minAmount0In;
         uint256 maxAmount0In;
         uint256 minAmount1In;
         uint256 maxAmount1In;
     }
 
-    mapping(PoolId => SwapVolumeParams) public swapVolumeParams;
+    SwapVolumeParams public swapVolumeParams;
 
-    constructor(IPoolManager _poolManager) BaseHook(_poolManager) {
-
-    }
-
-    function initializeSwapVolume(PoolId poolId, SwapVolumeParams calldata params) external {
-        if(isSwapVolumeParamsInitialized(poolId)){
-            PoolAlreadyInitialized.selector.revertWith();
-        }
-        swapVolumeParams[poolId] = params;
-    }
-
-    function isSwapVolumeParamsInitialized(PoolId poolId) internal view returns (bool) {
-        SwapVolumeParams memory params = swapVolumeParams[poolId];
-        return params.defaultFee != 0;
+    constructor(IPoolManager _poolManager, SwapVolumeParams memory params) BaseHook(_poolManager){
+        swapVolumeParams = params;
     }
 
     function getHookPermissions() public pure override returns (Hooks.Permissions memory) {
@@ -70,13 +60,15 @@ contract SwapVolume is BaseHook {
         override
         returns (bytes4, BeforeSwapDelta, uint24)
     {
-        uint24 fee = calculateFee(key, swapParams);
-        
-        return (BaseHook.beforeSwap.selector, BeforeSwapDeltaLibrary.ZERO_DELTA, fee);
+        poolManager.updateDynamicLPFee(key, calculateFee(key, swapParams));
+        return (BaseHook.beforeSwap.selector, BeforeSwapDeltaLibrary.ZERO_DELTA, 0);
     }
 
-    function calculateFee(PoolKey calldata key, IPoolManager.SwapParams calldata swapParams) internal returns(uint24 fee) {
-        SwapVolumeParams memory params = swapVolumeParams[key.toId()];
+    function calculateFee(
+        PoolKey calldata key, 
+        IPoolManager.SwapParams calldata swapParams
+    ) internal returns(uint24 fee) {
+        SwapVolumeParams memory params = swapVolumeParams;
 
         if(swapParams.zeroForOne) {
             if(swapParams.amountSpecified < 0) {
@@ -84,8 +76,8 @@ contract SwapVolume is BaseHook {
                     uint256(-swapParams.amountSpecified),
                     params.minAmount0In,
                     params.maxAmount0In,
-                    params.feeAtMaxAmountIn,
-                    params.feeAtMinAmountIn,
+                    params.feeAtMaxAmount0,
+                    params.feeAtMinAmount0,
                     params.defaultFee
                 );
             } else {
@@ -93,8 +85,8 @@ contract SwapVolume is BaseHook {
                     uint256(swapParams.amountSpecified),
                     params.minAmount1In,
                     params.maxAmount1In,
-                    params.feeAtMaxAmountIn,
-                    params.feeAtMinAmountIn,
+                    params.feeAtMaxAmount1,
+                    params.feeAtMinAmount1,
                     params.defaultFee
                 );
             }
@@ -104,8 +96,8 @@ contract SwapVolume is BaseHook {
                     uint256(-swapParams.amountSpecified),
                     params.minAmount1In,
                     params.maxAmount1In,
-                    params.feeAtMaxAmountIn,
-                    params.feeAtMinAmountIn,
+                    params.feeAtMaxAmount1,
+                    params.feeAtMinAmount1,
                     params.defaultFee
                 );
             } else {
@@ -113,15 +105,22 @@ contract SwapVolume is BaseHook {
                     uint256(swapParams.amountSpecified),
                     params.minAmount0In,
                     params.maxAmount0In,
-                    params.feeAtMaxAmountIn,
-                    params.feeAtMinAmountIn,
+                    params.feeAtMaxAmount0,
+                    params.feeAtMinAmount0,
                     params.defaultFee
                 );
             }
         }
     }
 
-    function calculateFeePerScenario(uint256 volume, uint256 minAmount, uint256 maxAmount, uint24 feeAtMaxAmount, uint24 feeAtMinAmount, uint24 defaultFee) internal returns(uint24 fee) {
+    function calculateFeePerScenario(
+        uint256 volume,
+        uint256 minAmount,
+        uint256 maxAmount,
+        uint24 feeAtMaxAmount,
+        uint24 feeAtMinAmount,
+        uint24 defaultFee
+    ) internal pure returns(uint24 fee) {
         if(volume < minAmount){
             return defaultFee;
         }
@@ -130,7 +129,7 @@ contract SwapVolume is BaseHook {
             return feeAtMaxAmount;
         }
 
-        uint256 deltaFee = feeAtMaxAmount - feeAtMinAmount;
+        uint256 deltaFee = feeAtMinAmount - feeAtMaxAmount;
         uint256 feeDifference = (deltaFee * (volume - minAmount)) / (maxAmount - minAmount);
         return feeAtMinAmount + uint24(feeDifference);
     }
