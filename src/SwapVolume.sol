@@ -16,8 +16,6 @@ contract SwapVolume is BaseHook {
     using CustomRevert for bytes4;
     using PoolIdLibrary for PoolKey;
 
-    error PoolAlreadyInitialized();
-
     struct SwapVolumeParams {
         uint24 defaultFee;
         uint24 feeAtMinAmount0;
@@ -60,14 +58,13 @@ contract SwapVolume is BaseHook {
         override
         returns (bytes4, BeforeSwapDelta, uint24)
     {
-        poolManager.updateDynamicLPFee(key, calculateFee(key, swapParams));
+        poolManager.updateDynamicLPFee(key, calculateFee(swapParams));
         return (BaseHook.beforeSwap.selector, BeforeSwapDeltaLibrary.ZERO_DELTA, 0);
     }
 
     function calculateFee(
-        PoolKey calldata key, 
         IPoolManager.SwapParams calldata swapParams
-    ) internal returns(uint24 fee) {
+    ) internal view returns(uint24) {
         SwapVolumeParams memory params = swapVolumeParams;
 
         if(swapParams.zeroForOne) {
@@ -120,7 +117,7 @@ contract SwapVolume is BaseHook {
         uint24 feeAtMaxAmount,
         uint24 feeAtMinAmount,
         uint24 defaultFee
-    ) internal pure returns(uint24 fee) {
+    ) internal pure returns(uint24) {
         if(volume < minAmount){
             return defaultFee;
         }
@@ -131,6 +128,6 @@ contract SwapVolume is BaseHook {
 
         uint256 deltaFee = feeAtMinAmount - feeAtMaxAmount;
         uint256 feeDifference = (deltaFee * (volume - minAmount)) / (maxAmount - minAmount);
-        return feeAtMinAmount + uint24(feeDifference);
+        return feeAtMinAmount - uint24(feeDifference);
     }
 }
