@@ -16,6 +16,9 @@ contract SwapVolume is BaseHook {
     using CustomRevert for bytes4;
     using PoolIdLibrary for PoolKey;
 
+    error InvalidFee(uint24 fee);
+    error InvalidAmountThresholds();
+
     struct SwapVolumeParams {
         uint24 defaultFee;
         uint24 feeAtMinAmount0;
@@ -31,6 +34,13 @@ contract SwapVolume is BaseHook {
     SwapVolumeParams public swapVolumeParams;
 
     constructor(IPoolManager _poolManager, SwapVolumeParams memory params) BaseHook(_poolManager){
+        if(params.feeAtMinAmount0 > params.defaultFee) InvalidFee.selector.revertWith(params.feeAtMinAmount0);
+        if(params.feeAtMaxAmount0 > params.feeAtMinAmount0) InvalidFee.selector.revertWith(params.feeAtMaxAmount0);
+        if(params.feeAtMinAmount1 > params.defaultFee) InvalidFee.selector.revertWith(params.feeAtMinAmount1);
+        if(params.feeAtMaxAmount1 > params.feeAtMinAmount1) InvalidFee.selector.revertWith(params.feeAtMaxAmount1);
+        if(params.minAmount0In > params.maxAmount0In) InvalidAmountThresholds.selector.revertWith();
+        if(params.minAmount1In > params.maxAmount1In) InvalidAmountThresholds.selector.revertWith();
+
         swapVolumeParams = params;
     }
 

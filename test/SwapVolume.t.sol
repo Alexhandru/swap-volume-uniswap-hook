@@ -20,6 +20,7 @@ import {IPositionManager} from "v4-periphery/src/interfaces/IPositionManager.sol
 import {EasyPosm} from "./utils/EasyPosm.sol";
 import {Fixtures} from "./utils/Fixtures.sol";
 import {SwapVolume} from "../src/SwapVolume.sol";
+import {HookMiner} from "v4-periphery/src/utils/HookMiner.sol";
 
 contract SwapVolumeTest is Test, Fixtures {
     using StateLibrary for IPoolManager;
@@ -37,28 +38,35 @@ contract SwapVolumeTest is Test, Fixtures {
     uint256 minAmount1In = 1e18;
     uint256 maxAmount1In = 10e18;
 
+    uint160 flags = uint160(
+                Hooks.BEFORE_SWAP_FLAG 
+            ) ^ (0x4444 << 144); // Namespace the hook to avoid collisions
+
+    SwapVolume.SwapVolumeParams swapVolumeParams = 
+        SwapVolume.SwapVolumeParams({
+            defaultFee: defaultFee,
+            feeAtMinAmount0: feeAtMinAmount0,
+            feeAtMaxAmount0: feeAtMaxAmount0,
+            feeAtMinAmount1: feeAtMinAmount1,
+            feeAtMaxAmount1: feeAtMaxAmount1,
+            minAmount0In: minAmount0In,
+            maxAmount0In: maxAmount0In,
+            minAmount1In: minAmount1In,
+            maxAmount1In: maxAmount1In
+        });
+
     function setUp() public {
         deployFreshManagerAndRouters();
 
         hook = SwapVolume(
-            address(uint160(Hooks.BEFORE_SWAP_FLAG))
+            address(flags)
         );
 
         deployCodeTo(
             "SwapVolume.sol:SwapVolume",
             abi.encode(
                 manager,
-                SwapVolume.SwapVolumeParams({
-                    defaultFee: defaultFee,
-                    feeAtMinAmount0: feeAtMinAmount0,
-                    feeAtMaxAmount0: feeAtMaxAmount0,
-                    feeAtMinAmount1: feeAtMinAmount1,
-                    feeAtMaxAmount1: feeAtMaxAmount1,
-                    minAmount0In: minAmount0In,
-                    maxAmount0In: maxAmount0In,
-                    minAmount1In: minAmount1In,
-                    maxAmount1In: maxAmount1In
-                })
+                swapVolumeParams
             ),
             address(hook)
         );
@@ -67,6 +75,93 @@ contract SwapVolumeTest is Test, Fixtures {
         (key,) = initPoolAndAddLiquidity(
             currency0, currency1, IHooks(address(hook)), LPFeeLibrary.DYNAMIC_FEE_FLAG, SQRT_PRICE_1_1
         );
+    }
+
+    function test_revert_invalidFeeAtMinAmount0() public {
+        uint24 invalidFeeAtMinAmount0 = defaultFee + 1; // Fee higher than defaultFee
+
+        swapVolumeParams.feeAtMinAmount0 = invalidFeeAtMinAmount0;
+
+        bytes memory constructorArgs = abi.encode(
+            manager,
+            swapVolumeParams
+        );
+
+        (, bytes32 salt) =
+            HookMiner.find(address(this), flags, type(SwapVolume).creationCode, constructorArgs);
+
+        vm.expectRevert(abi.encodeWithSelector(SwapVolume.InvalidFee.selector, invalidFeeAtMinAmount0));
+        new SwapVolume{salt: salt}(IPoolManager(manager), swapVolumeParams);
+    }
+
+    function test_revert_invalidFeeAtMaxAmount0() public {
+        uint24 invalidFeeAtMaxAmount0 = feeAtMinAmount0 + 1; // Fee higher than feeAtMinAmount0
+
+        swapVolumeParams.feeAtMaxAmount0 = invalidFeeAtMaxAmount0;
+
+        bytes memory constructorArgs = abi.encode(manager, swapVolumeParams);
+
+        (, bytes32 salt) =
+            HookMiner.find(address(this), flags, type(SwapVolume).creationCode, constructorArgs);
+
+        vm.expectRevert(abi.encodeWithSelector(SwapVolume.InvalidFee.selector, invalidFeeAtMaxAmount0));
+        new SwapVolume{salt: salt}(IPoolManager(manager), swapVolumeParams);
+    }
+
+    function test_revert_invalidFeeAtMinAmount1() public {
+        uint24 invalidFeeAtMinAmount1 = defaultFee + 1; // Fee higher than defaultFee
+
+        swapVolumeParams.feeAtMinAmount1 = invalidFeeAtMinAmount1;
+
+        bytes memory constructorArgs = abi.encode(manager, swapVolumeParams);
+
+        (, bytes32 salt) =
+            HookMiner.find(address(this), flags, type(SwapVolume).creationCode, constructorArgs);
+
+        vm.expectRevert(abi.encodeWithSelector(SwapVolume.InvalidFee.selector, invalidFeeAtMinAmount1));
+        new SwapVolume{salt: salt}(IPoolManager(manager), swapVolumeParams);
+    }
+
+    function test_revert_invalidFeeAtMaxAmount1() public {
+        uint24 invalidFeeAtMaxAmount1 = feeAtMinAmount1 + 1; // Fee higher than feeAtMinAmount1
+
+        swapVolumeParams.feeAtMaxAmount1 = invalidFeeAtMaxAmount1;
+
+        bytes memory constructorArgs = abi.encode(manager, swapVolumeParams);
+
+        (, bytes32 salt) =
+            HookMiner.find(address(this), flags, type(SwapVolume).creationCode, constructorArgs);
+
+        vm.expectRevert(abi.encodeWithSelector(SwapVolume.InvalidFee.selector, invalidFeeAtMaxAmount1));
+        new SwapVolume{salt: salt}(IPoolManager(manager), swapVolumeParams);
+    }
+
+    function test_revert_invalidAmountThresholds_minAmount0In() public {
+        uint256 invalidMinAmount0In = maxAmount0In + 1; // minAmount0In greater than maxAmount0In
+
+        swapVolumeParams.minAmount0In = invalidMinAmount0In;
+
+        bytes memory constructorArgs = abi.encode(manager, swapVolumeParams);
+
+        (, bytes32 salt) =
+            HookMiner.find(address(this), flags, type(SwapVolume).creationCode, constructorArgs);
+
+        vm.expectRevert(SwapVolume.InvalidAmountThresholds.selector);
+        new SwapVolume{salt: salt}(IPoolManager(manager), swapVolumeParams);
+    }
+
+    function test_revert_invalidAmountThresholds_minAmount1In() public {
+        uint256 invalidMinAmount1In = maxAmount1In + 1; // minAmount1In greater than maxAmount1In
+
+        swapVolumeParams.minAmount1In = invalidMinAmount1In;
+
+        bytes memory constructorArgs = abi.encode(manager, swapVolumeParams);
+
+        (, bytes32 salt) =
+            HookMiner.find(address(this), flags, type(SwapVolume).creationCode, constructorArgs);
+
+        vm.expectRevert(SwapVolume.InvalidAmountThresholds.selector);
+        new SwapVolume{salt: salt}(IPoolManager(manager), swapVolumeParams);
     }
 
     function test_swap_updateDynamicFee_defaultFee() public {
