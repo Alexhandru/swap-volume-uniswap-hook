@@ -38,8 +38,8 @@ contract SwapVolume is BaseHook {
         if(params.feeAtMaxAmount0 > params.feeAtMinAmount0) InvalidFee.selector.revertWith(params.feeAtMaxAmount0);
         if(params.feeAtMinAmount1 > params.defaultFee) InvalidFee.selector.revertWith(params.feeAtMinAmount1);
         if(params.feeAtMaxAmount1 > params.feeAtMinAmount1) InvalidFee.selector.revertWith(params.feeAtMaxAmount1);
-        if(params.minAmount0In > params.maxAmount0In) InvalidAmountThresholds.selector.revertWith();
-        if(params.minAmount1In > params.maxAmount1In) InvalidAmountThresholds.selector.revertWith();
+        if(params.minAmount0In >= params.maxAmount0In) InvalidAmountThresholds.selector.revertWith();
+        if(params.minAmount1In >= params.maxAmount1In) InvalidAmountThresholds.selector.revertWith();
 
         swapVolumeParams = params;
     }

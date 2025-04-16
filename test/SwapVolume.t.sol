@@ -21,6 +21,7 @@ import {EasyPosm} from "./utils/EasyPosm.sol";
 import {Fixtures} from "./utils/Fixtures.sol";
 import {SwapVolume} from "../src/SwapVolume.sol";
 import {HookMiner} from "v4-periphery/src/utils/HookMiner.sol";
+import {SwapVolumeHarness} from "./harnesses/SwapVolumeHarness.sol";
 
 contract SwapVolumeTest is Test, Fixtures {
     using StateLibrary for IPoolManager;
@@ -247,6 +248,98 @@ contract SwapVolumeTest is Test, Fixtures {
 
         // Check the swap amounts
         assertEq(_fetchPoolLPFee(key), expectedFee);
+    }
+
+    function test_fuzz_swapParams(
+        uint24 _defaultFee,
+        uint24 _feeAtMinAmount0,
+        uint24 _feeAtMaxAmount0,
+        uint24 _feeAtMinAmount1,
+        uint24 _feeAtMaxAmount1,
+        uint256 _minAmount0In,
+        uint256 _maxAmount0In,
+        uint256 _minAmount1In,
+        uint256 _maxAmount1In,
+        int256 _amountSpecified,
+        uint8 _zeroForOne
+    ) public {
+        _defaultFee = uint24(bound(_defaultFee, 0, 1000000)); // 0% to 100%
+        _feeAtMinAmount0 = uint24(bound(_feeAtMinAmount0, 0, _defaultFee)); // 0% to defaultFee
+        _feeAtMaxAmount0 = uint24(bound(_feeAtMaxAmount0, 0, _feeAtMinAmount0)); // 0% to feeAtMinAmount0
+
+        _feeAtMinAmount1 = uint24(bound(_feeAtMinAmount1, 0, _defaultFee)); // 0% to defaultFee
+        _feeAtMaxAmount1 = uint24(bound(_feeAtMaxAmount1, 0, _feeAtMinAmount1)); // 0% to feeAtMinAmount1
+
+        _minAmount0In = bound(_minAmount0In, 1, 10e18 - 1); // 1 to 10e18
+        _maxAmount0In = bound(_maxAmount0In, _minAmount0In + 1, 10e18); // minAmount0In < maxAmount0In
+
+        _minAmount1In = bound(_minAmount1In, 1, 10e18 - 1); // 1 to 10e18
+        _maxAmount1In = bound(_maxAmount1In, _minAmount1In + 1, 10e18); // minAmount1In < maxAmount1In
+
+        _zeroForOne = _zeroForOne % 2; // 0 or 1 
+
+        bool zeroForOne = _zeroForOne == 1 ? true : false; // true or false
+
+        // Determine the range for _amountSpecified based on _amountSpecified % 3
+        int256 minAmount = zeroForOne ? int256(_minAmount0In) : int256(_minAmount1In);
+        int256 maxAmount = zeroForOne ? int256(_maxAmount0In) : int256(_maxAmount1In);
+
+        if (_amountSpecified % 3 == 0) {
+            _amountSpecified = bound(
+                _amountSpecified,
+                _amountSpecified < 0 ? -(minAmount - 1) : int256(1),
+                _amountSpecified < 0 ? -1 : (minAmount - 1)); // Between 1 and less than minAmount
+        } else if (_amountSpecified % 3 == 1) {
+            _amountSpecified = bound(
+                _amountSpecified,
+                _amountSpecified < 0 ? -(maxAmount) : minAmount,
+                _amountSpecified < 0 ? -(minAmount) : maxAmount); // Between minAmount and maxAmount
+        } else if (_amountSpecified % 3 == 2) {
+            _amountSpecified = bound(
+                _amountSpecified,
+                _amountSpecified < 0 ? int256(-10e20) + 1 : maxAmount + 1, 
+                _amountSpecified < 0 ? -(maxAmount + 1) : int256(10e20)); // Above maxAmount
+        }
+
+        SwapVolume.SwapVolumeParams memory params = SwapVolume.SwapVolumeParams({
+            defaultFee: _defaultFee,
+            feeAtMinAmount0: _feeAtMinAmount0,
+            feeAtMaxAmount0: _feeAtMaxAmount0,
+            feeAtMinAmount1: _feeAtMinAmount1,
+            feeAtMaxAmount1: _feeAtMaxAmount1,
+            minAmount0In: _minAmount0In,
+            maxAmount0In: _maxAmount0In,
+            minAmount1In: _minAmount1In,
+            maxAmount1In: _maxAmount1In
+        });
+
+        // Deploy the hook with the fuzzed parameters
+
+        (, bytes32 salt) =
+            HookMiner.find(address(this), flags, type(SwapVolumeHarness).creationCode, abi.encode(manager, params));  
+
+        SwapVolumeHarness swapVolume = new SwapVolumeHarness{salt: salt}(IPoolManager(manager), params);
+
+        (key,) = initPoolAndAddLiquidity(
+            currency0, currency1, IHooks(address(swapVolume)), LPFeeLibrary.DYNAMIC_FEE_FLAG, SQRT_PRICE_1_1
+        );
+
+        // Perform the swap
+        swap(key, zeroForOne, _amountSpecified, ZERO_BYTES);
+
+        // Check the swap amounts
+        uint24 expectedFee = swapVolume.exposed_calculateFee(
+            IPoolManager.SwapParams({
+                zeroForOne: zeroForOne,
+                amountSpecified: _amountSpecified,
+                sqrtPriceLimitX96: zeroForOne ? MIN_PRICE_LIMIT : MAX_PRICE_LIMIT
+            })
+        );
+
+        assertEq(_fetchPoolLPFee(key), expectedFee, "LP fee mismatch after swap");
+
+
+        
     }
 
     function _fetchPoolLPFee(PoolKey memory _key) internal view returns (uint256 lpFee) {
