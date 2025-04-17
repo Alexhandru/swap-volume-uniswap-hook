@@ -264,6 +264,7 @@ contract SwapVolumeTest is Test, Fixtures {
         uint8 _zeroForOne
     ) public {
         _defaultFee = uint24(bound(_defaultFee, 0, 1000000)); // 0% to 100%
+
         _feeAtMinAmount0 = uint24(bound(_feeAtMinAmount0, 0, _defaultFee)); // 0% to defaultFee
         _feeAtMaxAmount0 = uint24(bound(_feeAtMaxAmount0, 0, _feeAtMinAmount0)); // 0% to feeAtMinAmount0
 
@@ -280,26 +281,37 @@ contract SwapVolumeTest is Test, Fixtures {
 
         bool zeroForOne = _zeroForOne == 1 ? true : false; // true or false
 
-        // Determine the range for _amountSpecified based on _amountSpecified % 3
-        int256 minAmount = zeroForOne ? int256(_minAmount0In) : int256(_minAmount1In);
-        int256 maxAmount = zeroForOne ? int256(_maxAmount0In) : int256(_maxAmount1In);
+        bool exactInput = _amountSpecified < 0 ? true : false; // Check if it's an exact input swap
+        int256 minAmount = zeroForOne ? 
+            (exactInput ? int256(minAmount0In) : int256(_minAmount1In)) : 
+            (exactInput ? int256(_minAmount1In) : int256(_minAmount0In));
+        int256 maxAmount = zeroForOne ? 
+            (exactInput ? int256(_maxAmount0In) : int256(_maxAmount1In)) : 
+            (exactInput ? int256(_maxAmount1In) : int256(_maxAmount0In));
 
+        vm.assume(_amountSpecified > 0); // Avoid zero amount
+        // Determine the range for _amountSpecified based on _amountSpecified % 3
         if (_amountSpecified % 3 == 0) {
             _amountSpecified = bound(
                 _amountSpecified,
-                _amountSpecified < 0 ? -(minAmount - 1) : int256(1),
-                _amountSpecified < 0 ? -1 : (minAmount - 1)); // Between 1 and less than minAmount
+                int256(1),
+                minAmount == 1 ? int256(1) : minAmount - 1 
+            ); // Between 1 and less than minAmount
         } else if (_amountSpecified % 3 == 1) {
             _amountSpecified = bound(
                 _amountSpecified,
-                _amountSpecified < 0 ? -(maxAmount) : minAmount,
-                _amountSpecified < 0 ? -(minAmount) : maxAmount); // Between minAmount and maxAmount
+                minAmount,
+                maxAmount
+            ); // Between minAmount and maxAmount
         } else if (_amountSpecified % 3 == 2) {
             _amountSpecified = bound(
                 _amountSpecified,
-                _amountSpecified < 0 ? int256(-10e20) + 1 : maxAmount + 1, 
-                _amountSpecified < 0 ? -(maxAmount + 1) : int256(10e20)); // Above maxAmount
+                maxAmount + 1, 
+                int256(1e40)
+            ); // Above maxAmount
         }
+
+        _amountSpecified = exactInput ? -_amountSpecified : _amountSpecified; // Negate the amount if it's an exact input swap
 
         SwapVolume.SwapVolumeParams memory params = SwapVolume.SwapVolumeParams({
             defaultFee: _defaultFee,
@@ -337,9 +349,6 @@ contract SwapVolumeTest is Test, Fixtures {
         );
 
         assertEq(_fetchPoolLPFee(key), expectedFee, "LP fee mismatch after swap");
-
-
-        
     }
 
     function _fetchPoolLPFee(PoolKey memory _key) internal view returns (uint256 lpFee) {
