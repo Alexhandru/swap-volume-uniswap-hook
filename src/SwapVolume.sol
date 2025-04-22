@@ -16,7 +16,7 @@ contract SwapVolume is BaseHook {
     using CustomRevert for bytes4;
     using PoolIdLibrary for PoolKey;
 
-    error InvalidFee(uint24 fee);
+    error InvalidFees();
     error InvalidAmountThresholds();
 
     struct SwapVolumeParams {
@@ -25,23 +25,53 @@ contract SwapVolume is BaseHook {
         uint24 feeAtMaxAmount0;
         uint24 feeAtMinAmount1;
         uint24 feeAtMaxAmount1;
-        uint256 minAmount0In;
-        uint256 maxAmount0In;
-        uint256 minAmount1In;
-        uint256 maxAmount1In;
+        uint256 minAmount0;
+        uint256 maxAmount0;
+        uint256 minAmount1;
+        uint256 maxAmount1;
     }
 
-    SwapVolumeParams public swapVolumeParams;
+    uint24 immutable defaultFee;
+    uint24 immutable feeAtMinAmount0;
+    uint24 immutable feeAtMaxAmount0;
+    uint24 immutable feeAtMinAmount1;
+    uint24 immutable feeAtMaxAmount1;
+    uint256 immutable minAmount0;
+    uint256 immutable maxAmount0;
+    uint256 immutable minAmount1;
+    uint256 immutable maxAmount1;
 
     constructor(IPoolManager _poolManager, SwapVolumeParams memory params) BaseHook(_poolManager){
-        if(params.feeAtMinAmount0 > params.defaultFee) InvalidFee.selector.revertWith(params.feeAtMinAmount0);
-        if(params.feeAtMaxAmount0 > params.feeAtMinAmount0) InvalidFee.selector.revertWith(params.feeAtMaxAmount0);
-        if(params.feeAtMinAmount1 > params.defaultFee) InvalidFee.selector.revertWith(params.feeAtMinAmount1);
-        if(params.feeAtMaxAmount1 > params.feeAtMinAmount1) InvalidFee.selector.revertWith(params.feeAtMaxAmount1);
-        if(params.minAmount0In >= params.maxAmount0In) InvalidAmountThresholds.selector.revertWith();
-        if(params.minAmount1In >= params.maxAmount1In) InvalidAmountThresholds.selector.revertWith();
+        if(params.feeAtMinAmount0 > params.defaultFee) InvalidFees.selector.revertWith();
+        if(params.feeAtMaxAmount0 > params.feeAtMinAmount0) InvalidFees.selector.revertWith();
+        if(params.feeAtMinAmount1 > params.defaultFee) InvalidFees.selector.revertWith();
+        if(params.feeAtMaxAmount1 > params.feeAtMinAmount1) InvalidFees.selector.revertWith();
+        if(params.minAmount0 >= params.maxAmount0) InvalidAmountThresholds.selector.revertWith();
+        if(params.minAmount1 >= params.maxAmount1) InvalidAmountThresholds.selector.revertWith();
 
-        swapVolumeParams = params;
+        defaultFee = params.defaultFee;
+        feeAtMinAmount0 = params.feeAtMinAmount0;
+        feeAtMaxAmount0 = params.feeAtMaxAmount0;
+        feeAtMinAmount1 = params.feeAtMinAmount1;
+        feeAtMaxAmount1 = params.feeAtMaxAmount1;
+        minAmount0 = params.minAmount0;
+        maxAmount0 = params.maxAmount0;
+        minAmount1 = params.minAmount1;
+        maxAmount1 = params.maxAmount1;
+    }
+
+    function getSwapVolumeParams() external view returns (SwapVolumeParams memory) {
+        return SwapVolumeParams({
+            defaultFee: defaultFee,
+            feeAtMinAmount0: feeAtMinAmount0,
+            feeAtMaxAmount0: feeAtMaxAmount0,
+            feeAtMinAmount1: feeAtMinAmount1,
+            feeAtMaxAmount1: feeAtMaxAmount1,
+            minAmount0: minAmount0,
+            maxAmount0: maxAmount0,
+            minAmount1: minAmount1,
+            maxAmount1: maxAmount1
+        });
     }
 
     function getHookPermissions() public pure override returns (Hooks.Permissions memory) {
@@ -75,46 +105,44 @@ contract SwapVolume is BaseHook {
     function calculateFee(
         IPoolManager.SwapParams calldata swapParams
     ) internal view returns(uint24) {
-        SwapVolumeParams memory params = swapVolumeParams;
-
         if(swapParams.zeroForOne) {
             if(swapParams.amountSpecified < 0) {
                 return calculateFeePerScenario(
                     uint256(-swapParams.amountSpecified),
-                    params.minAmount0In,
-                    params.maxAmount0In,
-                    params.feeAtMaxAmount0,
-                    params.feeAtMinAmount0,
-                    params.defaultFee
+                    minAmount0,
+                    maxAmount0,
+                    feeAtMaxAmount0,
+                    feeAtMinAmount0,
+                    defaultFee
                 );
             } else {
                 return calculateFeePerScenario(
                     uint256(swapParams.amountSpecified),
-                    params.minAmount1In,
-                    params.maxAmount1In,
-                    params.feeAtMaxAmount1,
-                    params.feeAtMinAmount1,
-                    params.defaultFee
+                    minAmount1,
+                    maxAmount1,
+                    feeAtMaxAmount1,
+                    feeAtMinAmount1,
+                    defaultFee
                 );
             }
         } else {
             if(swapParams.amountSpecified < 0) {
                 return calculateFeePerScenario(
                     uint256(-swapParams.amountSpecified),
-                    params.minAmount1In,
-                    params.maxAmount1In,
-                    params.feeAtMaxAmount1,
-                    params.feeAtMinAmount1,
-                    params.defaultFee
+                    minAmount1,
+                    maxAmount1,
+                    feeAtMaxAmount1,
+                    feeAtMinAmount1,
+                    defaultFee
                 );
             } else {
                 return calculateFeePerScenario(
                     uint256(swapParams.amountSpecified),
-                    params.minAmount0In,
-                    params.maxAmount0In,
-                    params.feeAtMaxAmount0,
-                    params.feeAtMinAmount0,
-                    params.defaultFee
+                    minAmount0,
+                    maxAmount0,
+                    feeAtMaxAmount0,
+                    feeAtMinAmount0,
+                    defaultFee
                 );
             }
         }
