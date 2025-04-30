@@ -9,38 +9,55 @@ import {PoolId, PoolIdLibrary} from "v4-core/src/types/PoolId.sol";
 import {BalanceDelta} from "v4-core/src/types/BalanceDelta.sol";
 import {BeforeSwapDelta, BeforeSwapDeltaLibrary} from "v4-core/src/types/BeforeSwapDelta.sol";
 import {CustomRevert} from "v4-core/src/libraries/CustomRevert.sol";
+import {ISwapVolume} from "./interfaces/ISwapVolume.sol";
 
-
-contract SwapVolume is BaseHook {
+/**
+ * @dev Volume-based dynamic fee hook that adjusts swap fees based on transaction volume.
+ * The hook implements a tiered fee structure where fees decrease as transaction volume increases.
+ *
+ * The fee calculation works differently for each token (currency0 and currency1):
+ * - Below minAmount: Uses defaultFee
+ * - Between minAmount and maxAmount: Linear interpolation between feeAtMinAmount and feeAtMaxAmount
+ * - Above maxAmount: Uses feeAtMaxAmount
+ *
+ * Fee relationships must maintain:
+ * - feeAtMinAmount < defaultFee
+ * - feeAtMaxAmount < feeAtMinAmount
+ * - minAmount < maxAmount
+ *
+ * NOTE: The fee calculation is symmetric for both swap directions and both exact input/output swaps.
+ */
+contract SwapVolume is ISwapVolume, BaseHook {
     using PoolIdLibrary for PoolKey;
     using CustomRevert for bytes4;
     using PoolIdLibrary for PoolKey;
 
-    error InvalidFees();
-    error InvalidAmountThresholds();
-
-    struct SwapVolumeParams {
-        uint24 defaultFee;
-        uint24 feeAtMinAmount0;
-        uint24 feeAtMaxAmount0;
-        uint24 feeAtMinAmount1;
-        uint24 feeAtMaxAmount1;
-        uint256 minAmount0;
-        uint256 maxAmount0;
-        uint256 minAmount1;
-        uint256 maxAmount1;
-    }
-
+    /// @dev The default fee applied when swap amount is below minAmount
     uint24 immutable defaultFee;
+    /// @dev Fee applied at minAmount0 threshold for currency0
     uint24 immutable feeAtMinAmount0;
+    /// @dev Fee applied at maxAmount0 threshold for currency0
     uint24 immutable feeAtMaxAmount0;
+    /// @dev Fee applied at minAmount1 threshold for currency1
     uint24 immutable feeAtMinAmount1;
+    /// @dev Fee applied at maxAmount1 threshold for currency1
     uint24 immutable feeAtMaxAmount1;
+    /// @dev Minimum amount threshold for currency0
     uint256 immutable minAmount0;
+    /// @dev Maximum amount threshold for currency0
     uint256 immutable maxAmount0;
+    /// @dev Minimum amount threshold for currency1
     uint256 immutable minAmount1;
+    /// @dev Maximum amount threshold for currency1
     uint256 immutable maxAmount1;
 
+    /**
+     * @dev Constructor that validates and sets the fee parameters.
+     * Reverts if:
+     * - Any fee at min amount is higher than the default fee
+     * - Any fee at max amount is higher than its corresponding fee at min fee
+     * - Any min amount is greater than or equal to its max amount
+     */
     constructor(IPoolManager _poolManager, SwapVolumeParams memory params) BaseHook(_poolManager){
         if(params.feeAtMinAmount0 > params.defaultFee) InvalidFees.selector.revertWith();
         if(params.feeAtMaxAmount0 > params.feeAtMinAmount0) InvalidFees.selector.revertWith();
@@ -60,6 +77,10 @@ contract SwapVolume is BaseHook {
         maxAmount1 = params.maxAmount1;
     }
 
+    /**
+     * @dev Returns the current fee parameters of the hook.
+     * @return SwapVolumeParams struct containing all fee and amount threshold parameters
+     */
     function getSwapVolumeParams() external view returns (SwapVolumeParams memory) {
         return SwapVolumeParams({
             defaultFee: defaultFee,
@@ -74,6 +95,10 @@ contract SwapVolume is BaseHook {
         });
     }
 
+    /**
+     * @dev Sets the hook permissions. Only requires beforeSwap permission to update dynamic fees.
+     * @return permissions The hook permissions
+     */
     function getHookPermissions() public pure override returns (Hooks.Permissions memory) {
         return Hooks.Permissions({
             beforeInitialize: false,
@@ -93,6 +118,11 @@ contract SwapVolume is BaseHook {
         });
     }
 
+    /**
+     * @dev Handles the beforeSwap hook by calculating and updating the dynamic LP fee based on
+     * the swap amount.
+     * @return The hook selector, zero delta (no hooks modifying swap amounts), and zero fee
+     */
     function _beforeSwap(address, PoolKey calldata key, IPoolManager.SwapParams calldata swapParams, bytes calldata)
         internal
         override
@@ -102,12 +132,18 @@ contract SwapVolume is BaseHook {
         return (BaseHook.beforeSwap.selector, BeforeSwapDeltaLibrary.ZERO_DELTA, 0);
     }
 
+    /**
+     * @dev Calculates the appropriate fee based on swap parameters and direction.
+     * Handles both exact input and exact output swaps in both directions.
+     * @param swapParams The parameters of the swap including amount and direction
+     * @return calculatedFee The calculated fee as a uint24
+     */
     function calculateFee(
         IPoolManager.SwapParams calldata swapParams
-    ) internal view returns(uint24) {
+    ) internal view returns(uint24 calculatedFee) {
         if(swapParams.zeroForOne) {
             if(swapParams.amountSpecified < 0) {
-                return calculateFeePerScenario(
+                calculatedFee = calculateFeePerScenario(
                     uint256(-swapParams.amountSpecified),
                     minAmount0,
                     maxAmount0,
@@ -116,7 +152,7 @@ contract SwapVolume is BaseHook {
                     defaultFee
                 );
             } else {
-                return calculateFeePerScenario(
+                calculatedFee = calculateFeePerScenario(
                     uint256(swapParams.amountSpecified),
                     minAmount1,
                     maxAmount1,
@@ -127,7 +163,7 @@ contract SwapVolume is BaseHook {
             }
         } else {
             if(swapParams.amountSpecified < 0) {
-                return calculateFeePerScenario(
+                calculatedFee = calculateFeePerScenario(
                     uint256(-swapParams.amountSpecified),
                     minAmount1,
                     maxAmount1,
@@ -136,7 +172,7 @@ contract SwapVolume is BaseHook {
                     defaultFee
                 );
             } else {
-                return calculateFeePerScenario(
+                calculatedFee = calculateFeePerScenario(
                     uint256(swapParams.amountSpecified),
                     minAmount0,
                     maxAmount0,
@@ -148,16 +184,27 @@ contract SwapVolume is BaseHook {
         }
     }
 
+    /**
+     * @dev Calculates the fee for a specific volume based on the defined thresholds.
+     * Implements linear interpolation between min and max amounts.
+     * @param volume The transaction volume to calculate fee for
+     * @param minAmount The minimum amount threshold
+     * @param maxAmount The maximum amount threshold
+     * @param feeAtMaxAmount The fee at maximum amount
+     * @param feeAtMinAmount The fee at minimum amount
+     * @param _defaultFee The default fee for amounts below minimum
+     * @return calculatedFee The calculated fee as a uint24
+     */
     function calculateFeePerScenario(
         uint256 volume,
         uint256 minAmount,
         uint256 maxAmount,
         uint24 feeAtMaxAmount,
         uint24 feeAtMinAmount,
-        uint24 defaultFee
-    ) internal pure returns(uint24) {
+        uint24 _defaultFee
+    ) internal pure returns(uint24 calculatedFee) {
         if(volume < minAmount){
-            return defaultFee;
+            return _defaultFee;
         }
 
         if(volume > maxAmount){
@@ -166,6 +213,6 @@ contract SwapVolume is BaseHook {
 
         uint256 deltaFee = feeAtMinAmount - feeAtMaxAmount;
         uint256 feeDifference = (deltaFee * (volume - minAmount)) / (maxAmount - minAmount);
-        return feeAtMinAmount - uint24(feeDifference);
+        calculatedFee = feeAtMinAmount - uint24(feeDifference);
     }
 }

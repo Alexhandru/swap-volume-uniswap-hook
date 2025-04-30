@@ -4,24 +4,19 @@ pragma solidity ^0.8.24;
 import "forge-std/Test.sol";
 import {IHooks} from "v4-core/src/interfaces/IHooks.sol";
 import {Hooks} from "v4-core/src/libraries/Hooks.sol";
-import {TickMath} from "v4-core/src/libraries/TickMath.sol";
 import {IPoolManager} from "v4-core/src/interfaces/IPoolManager.sol";
 import {PoolKey} from "v4-core/src/types/PoolKey.sol";
-import {BalanceDelta} from "v4-core/src/types/BalanceDelta.sol";
-import {PoolId, PoolIdLibrary} from "v4-core/src/types/PoolId.sol";
-import {CurrencyLibrary, Currency} from "v4-core/src/types/Currency.sol";
-import {PoolSwapTest} from "v4-core/src/test/PoolSwapTest.sol";
-import {Counter} from "../src/Counter.sol";
+import {PoolId} from "v4-core/src/types/PoolId.sol";
+import {Currency} from "v4-core/src/types/Currency.sol";
 import {StateLibrary} from "v4-core/src/libraries/StateLibrary.sol";
 import {LPFeeLibrary} from "v4-core/src/libraries/LPFeeLibrary.sol";
 import {ProtocolFeeLibrary} from "v4-core/src/libraries/ProtocolFeeLibrary.sol";
-import {LiquidityAmounts} from "v4-core/test/utils/LiquidityAmounts.sol";
 import {IPositionManager} from "v4-periphery/src/interfaces/IPositionManager.sol";
-import {EasyPosm} from "./utils/EasyPosm.sol";
 import {Fixtures} from "./utils/Fixtures.sol";
 import {SwapVolume} from "../src/SwapVolume.sol";
 import {HookMiner} from "v4-periphery/src/utils/HookMiner.sol";
 import {SwapVolumeHarness} from "./harnesses/SwapVolumeHarness.sol";
+import {ISwapVolume} from "../src/interfaces/ISwapVolume.sol";
 
 contract SwapVolumeTest is Test, Fixtures {
     using StateLibrary for IPoolManager;
@@ -43,8 +38,8 @@ contract SwapVolumeTest is Test, Fixtures {
                 Hooks.BEFORE_SWAP_FLAG 
             ) ^ (0x4444 << 144); // Namespace the hook to avoid collisions
 
-    SwapVolume.SwapVolumeParams swapVolumeParams = 
-        SwapVolume.SwapVolumeParams({
+    ISwapVolume.SwapVolumeParams swapVolumeParams = 
+        ISwapVolume.SwapVolumeParams({
             defaultFee: defaultFee,
             feeAtMinAmount0: feeAtMinAmount0,
             feeAtMaxAmount0: feeAtMaxAmount0,
@@ -91,7 +86,7 @@ contract SwapVolumeTest is Test, Fixtures {
         (, bytes32 salt) =
             HookMiner.find(address(this), flags, type(SwapVolume).creationCode, constructorArgs);
 
-        vm.expectRevert(SwapVolume.InvalidFees.selector);
+        vm.expectRevert(ISwapVolume.InvalidFees.selector);
         new SwapVolume{salt: salt}(IPoolManager(manager), swapVolumeParams);
     }
 
@@ -105,7 +100,7 @@ contract SwapVolumeTest is Test, Fixtures {
         (, bytes32 salt) =
             HookMiner.find(address(this), flags, type(SwapVolume).creationCode, constructorArgs);
 
-        vm.expectRevert(SwapVolume.InvalidFees.selector);
+        vm.expectRevert(ISwapVolume.InvalidFees.selector);
         new SwapVolume{salt: salt}(IPoolManager(manager), swapVolumeParams);
     }
 
@@ -119,7 +114,7 @@ contract SwapVolumeTest is Test, Fixtures {
         (, bytes32 salt) =
             HookMiner.find(address(this), flags, type(SwapVolume).creationCode, constructorArgs);
 
-        vm.expectRevert(SwapVolume.InvalidFees.selector);
+        vm.expectRevert(ISwapVolume.InvalidFees.selector);
         new SwapVolume{salt: salt}(IPoolManager(manager), swapVolumeParams);
     }
 
@@ -133,7 +128,7 @@ contract SwapVolumeTest is Test, Fixtures {
         (, bytes32 salt) =
             HookMiner.find(address(this), flags, type(SwapVolume).creationCode, constructorArgs);
 
-        vm.expectRevert(SwapVolume.InvalidFees.selector);
+        vm.expectRevert(ISwapVolume.InvalidFees.selector);
         new SwapVolume{salt: salt}(IPoolManager(manager), swapVolumeParams);
     }
 
@@ -147,7 +142,7 @@ contract SwapVolumeTest is Test, Fixtures {
         (, bytes32 salt) =
             HookMiner.find(address(this), flags, type(SwapVolume).creationCode, constructorArgs);
 
-        vm.expectRevert(SwapVolume.InvalidAmountThresholds.selector);
+        vm.expectRevert(ISwapVolume.InvalidAmountThresholds.selector);
         new SwapVolume{salt: salt}(IPoolManager(manager), swapVolumeParams);
     }
 
@@ -161,7 +156,7 @@ contract SwapVolumeTest is Test, Fixtures {
         (, bytes32 salt) =
             HookMiner.find(address(this), flags, type(SwapVolume).creationCode, constructorArgs);
 
-        vm.expectRevert(SwapVolume.InvalidAmountThresholds.selector);
+        vm.expectRevert(ISwapVolume.InvalidAmountThresholds.selector);
         new SwapVolume{salt: salt}(IPoolManager(manager), swapVolumeParams);
     }
 
@@ -250,6 +245,52 @@ contract SwapVolumeTest is Test, Fixtures {
         assertEq(_fetchPoolLPFee(key), expectedFee);
     }
 
+    function test_swap_sameMinMaxFees() public {
+        // Set up new params where min and max fees are the same
+        ISwapVolume.SwapVolumeParams memory sameFeesParams = ISwapVolume.SwapVolumeParams({
+            defaultFee: 3000,
+            feeAtMinAmount0: 2000, // Same fee for min and max amount0
+            feeAtMaxAmount0: 2000,
+            feeAtMinAmount1: 1500, // Same fee for min and max amount1
+            feeAtMaxAmount1: 1500,
+            minAmount0: 1e18,
+            maxAmount0: 10e18,
+            minAmount1: 1e18,
+            maxAmount1: 10e18
+        });
+
+        // Deploy new hook with modified params
+        (, bytes32 salt) = HookMiner.find(
+            address(this), 
+            flags, 
+            type(SwapVolume).creationCode, 
+            abi.encode(manager, sameFeesParams)
+        );
+        
+        SwapVolume newHook = new SwapVolume{salt: salt}(IPoolManager(manager), sameFeesParams);
+
+        // Initialize new pool with the hook
+        (PoolKey memory newKey,) = initPoolAndAddLiquidity(
+            currency0, 
+            currency1, 
+            IHooks(address(newHook)), 
+            LPFeeLibrary.DYNAMIC_FEE_FLAG, 
+            SQRT_PRICE_1_1
+        );
+
+        // Test swap for token0
+        bool zeroForOne = true;
+        int256 amountSpecified = -5e18; // Amount between min and max
+        swap(newKey, zeroForOne, amountSpecified, ZERO_BYTES);
+        assertEq(_fetchPoolLPFee(newKey), 2000, "Fee should be 2000 for token0 swap");
+
+        // Test swap for token1
+        zeroForOne = false;
+        amountSpecified = -5e18; // Amount between min and max
+        swap(newKey, zeroForOne, amountSpecified, ZERO_BYTES);
+        assertEq(_fetchPoolLPFee(newKey), 1500, "Fee should be 1500 for token1 swap");
+    }
+
     function test_fuzz_swapParams(
         uint24 _defaultFee,
         uint24 _feeAtMinAmount0,
@@ -313,7 +354,7 @@ contract SwapVolumeTest is Test, Fixtures {
 
         _amountSpecified = exactInput ? -_amountSpecified : _amountSpecified; // Negate the amount if it's an exact input swap
 
-        SwapVolume.SwapVolumeParams memory params = SwapVolume.SwapVolumeParams({
+        ISwapVolume.SwapVolumeParams memory params = ISwapVolume.SwapVolumeParams({
             defaultFee: _defaultFee,
             feeAtMinAmount0: _feeAtMinAmount0,
             feeAtMaxAmount0: _feeAtMaxAmount0,
