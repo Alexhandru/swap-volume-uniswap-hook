@@ -1,100 +1,136 @@
-# v4-template
-### **A template for writing Uniswap v4 Hooks 🦄**
+# SwapVolume Hook
 
-[`Use this Template`](https://github.com/uniswapfoundation/v4-template/generate)
+The **SwapVolume** hook implements dynamic fees based on swap volume. The hook adjusts fees in a tiered structure based on swap amounts:
+- **Below minAmount:** Uses `defaultFee`
+- **Between minAmount and maxAmount:** Uses linear interpolation between `feeAtMinAmount` and `feeAtMaxAmount`
+- **Above maxAmount:** Uses `feeAtMaxAmount`
 
-1. The example hook [Counter.sol](src/Counter.sol) demonstrates the `beforeSwap()` and `afterSwap()` hooks
-2. The test template [Counter.t.sol](test/Counter.t.sol) preconfigures the v4 pool manager, test tokens, and test liquidity.
+Fee relationships must maintain:
+- `feeAtMinAmount < defaultFee`
+- `feeAtMaxAmount < feeAtMinAmount`
+- `minAmount < maxAmount`
 
-<details>
-<summary>Updating to v4-template:latest</summary>
+## Getting Started
 
-This template is actively maintained -- you can update the v4 dependencies, scripts, and helpers: 
+### Prerequisites
+
+- [Foundry](https://book.getfoundry.sh) (Forge)
+- [Anvil](https://book.getfoundry.sh/anvil/) (for local development)
+
+### Installation
+
+Clone the repository and install dependencies:
+
 ```bash
-git remote add template https://github.com/uniswapfoundation/v4-template
-git fetch template
-git merge template/main <BRANCH> --allow-unrelated-histories
-```
-
-</details>
-
----
-
-### Check Forge Installation
-*Ensure that you have correctly installed Foundry (Forge) Stable. You can update Foundry by running:*
-
-```
-foundryup
-```
-
-> *v4-template* appears to be _incompatible_ with Foundry Nightly. See [foundry announcements](https://book.getfoundry.sh/announcements) to revert back to the stable build
-
-
-
-## Set up
-
-*requires [foundry](https://book.getfoundry.sh)*
-
-```
 forge install
-forge test
 ```
 
-### Local Development (Anvil)
+## SwapVolume Hook Details
 
-Other than writing unit tests (recommended!), you can only deploy & test hooks on [anvil](https://book.getfoundry.sh/anvil/)
+- **Source:** [`src/SwapVolume.sol`](src/SwapVolume.sol)
+- **Interface:** [`src/interfaces/ISwapVolume.sol`](src/interfaces/ISwapVolume.sol)
+
+The SwapVolume hook is designed to be deployed with a set of parameters encapsulated in the `ISwapVolume.SwapVolumeParams` struct.
+
+### Example Parameters
+
+```solidity
+ISwapVolume.SwapVolumeParams memory params = ISwapVolume.SwapVolumeParams({
+    defaultFee: 3000,      // 0.3%
+    feeAtMinAmount0: 2700, // 0.27%
+    feeAtMaxAmount0: 2400, // 0.24%
+    feeAtMinAmount1: 2100, // 0.21%
+    feeAtMaxAmount1: 2000, // 0.20%
+    minAmount0: 1e18,      // 1 token0
+    maxAmount0: 10e18,     // 10 token0
+    minAmount1: 1e18,      // 1 token1
+    maxAmount1: 10e18      // 10 token1
+});
+```
+
+## Interacting with the SwapVolume Hook
+
+Several scripts are provided in the `script/` folder to deploy and interact with the SwapVolume hook. These include:
+- **Deployment via CREATE2:** [`SwapVolume.s.sol`](script/SwapVolume.s.sol)
+- **Local lifecycle testing (pool initialization, liquidity provision, swaps):** [`Anvil.s.sol`](script/Anvil.s.sol)
+
+### Deploying using Forge Scripts
+
+#### Deploying the SwapVolume Hook
+
+Use the following command to deploy the SwapVolume hook (via CREATE2) on your local network:
 
 ```bash
-# start anvil, a local EVM chain
-anvil
-
-# in a new terminal
-forge script script/Anvil.s.sol \
-    --rpc-url http://localhost:8545 \
-    --private-key 0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80 \
-    --broadcast
+forge script script/SwapVolume.s.sol:SwapVolumeScript --rpc-url http://localhost:8545 --private-key <YOUR_PRIVATE_KEY> --broadcast
 ```
 
-See [script/](script/) for hook deployment, pool creation, liquidity provision, and swapping.
+This script:
+- Mines the correct salt (using `HookMiner`) for the given parameters and flags
+- Deploys the SwapVolume hook with the provided parameters
+- Logs the deployed hook address
 
----
+#### Full Lifecycle Testing on Anvil
 
-<details>
-<summary><h2>Troubleshooting</h2></summary>
+You can also run a full deployment and test lifecycle (pool creation, liquidity addition, and swapping) using:
 
+```bash
+forge script script/Anvil.s.sol:SwapVolumeScript --rpc-url http://localhost:8545 --private-key <YOUR_PRIVATE_KEY> --broadcast
+```
 
+The `Anvil.s.sol` script:
+- Deploys a pool manager and the SwapVolume hook
+- Sets up additional helper contracts (like the Position Manager and Routers)
+- Initializes a pool using the SwapVolume hook
+- Adds liquidity and performs a test swap for full-end-to-end verification
 
-### *Permission Denied*
+## Constants & Config Files
 
-When installing dependencies with `forge install`, Github may throw a `Permission Denied` error
+Two important files help configure and bootstrap the system:
 
-Typically caused by missing Github SSH keys, and can be resolved by following the steps [here](https://docs.github.com/en/github/authenticating-to-github/connecting-to-github-with-ssh) 
+### Constants File
 
-Or [adding the keys to your ssh-agent](https://docs.github.com/en/authentication/connecting-to-github-with-ssh/generating-a-new-ssh-key-and-adding-it-to-the-ssh-agent#adding-your-ssh-key-to-the-ssh-agent), if you have already uploaded SSH keys
+[`script/base/Constants.sol`](script/base/Constants.sol)  
+The **Constants** file contains shared, immutable parameters used across scripts. These include:
 
-### Hook deployment failures
+- **Deployer Addresses:**  
+  The address from which CREATE2 deployments are performed (e.g., `CREATE2_DEPLOYER`).
 
-Hook deployment failures are caused by incorrect flags or incorrect salt mining
+- **Pool Manager & Other Contract Addresses:**  
+  Pre-set addresses for key contracts such as the Pool Manager, Position Manager, and the Permit2 contract, which help in setting up the system on a local Anvil network.
 
-1. Verify the flags are in agreement:
-    * `getHookCalls()` returns the correct flags
-    * `flags` provided to `HookMiner.find(...)`
-2. Verify salt mining is correct:
-    * In **forge test**: the *deployer* for: `new Hook{salt: salt}(...)` and `HookMiner.find(deployer, ...)` are the same. This will be `address(this)`. If using `vm.prank`, the deployer will be the pranking address
-    * In **forge script**: the deployer must be the CREATE2 Proxy: `0x4e59b44847b379578588920cA78FbF26c0B4956C`
-        * If anvil does not have the CREATE2 deployer, your foundry may be out of date. You can update it with `foundryup`
+This file centralizes addresses to keep scripts consistent and to easily change deployment configuration if needed.
 
-</details>
+### Config File
 
----
+[`script/base/Config.sol`](script/base/Config.sol)  
+The **Config** file (if present) is used to configure and fine-tune deployment parameters for different environments. It may include:
+- Network-specific configurations
+- Pool fee settings and tick spacing
+- Default token amounts for liquidity, price parameters, and more
 
-Additional resources:
+Using these files helps in keeping the deployment scripts clean—by abstracting environment-specific configuration details away from the logic in the scripts themselves.
 
-[Uniswap v4 docs](https://docs.uniswap.org/contracts/v4/overview)
+## Debugging & Troubleshooting
 
-[v4-periphery](https://github.com/uniswap/v4-periphery) contains advanced hook implementations that serve as a great reference
+### Common Issues
 
-[v4-core](https://github.com/uniswap/v4-core)
+1. **Hook Deployment Failures:**
+   - Verify that the deployment flags passed to `HookMiner.find` match the ones returned by `getHookCalls()` in your hook.
+   - Ensure that the salt mining logic uses the same deployer address (in scripts, this should be the CREATE2 deployer at `0x4e59b44847b379578588920cA78FbF26c0B4956C`).
 
-[v4-by-example](https://v4-by-example.org)
+2. **Permission Denied / SSH Key Issues:**
+   - If you encounter Github SSH errors, ensure your SSH keys are correctly added to your agent. Refer to [GitHub’s SSH setup guide](https://docs.github.com/en/github/authenticating-to-github/connecting-to-github-with-ssh).
+
+3. **Incorrect Fee or Parameter Issues:**
+   - Ensure that the fee parameters follow the valid relationships:
+     * `feeAtMinAmount < defaultFee`
+     * `feeAtMaxAmount < feeAtMinAmount`
+     * `minAmount < maxAmount`
+   - You can add extra debugging logs within your hook to monitor fee calculations if needed.
+
+### Additional Debugging Tips
+
+- Use `console.log` statements in your script to output key variable values.
+- Run your tests on Anvil locally and inspect the transaction logs via Foundry’s output.
+- Check the [v4-core](https://github.com/uniswap/v4-core) and [v4-periphery](https://github.com/uniswap/v4-periphery) repositories for more detailed implementation examples.
 

@@ -17,6 +17,7 @@ import {SwapVolume} from "../src/SwapVolume.sol";
 import {HookMiner} from "v4-periphery/src/utils/HookMiner.sol";
 import {SwapVolumeHarness} from "./harnesses/SwapVolumeHarness.sol";
 import {ISwapVolume} from "../src/interfaces/ISwapVolume.sol";
+import {SwapParams} from "v4-core/src/types/PoolOperation.sol";
 
 contract SwapVolumeTest is Test, Fixtures {
     using StateLibrary for IPoolManager;
@@ -382,7 +383,7 @@ contract SwapVolumeTest is Test, Fixtures {
 
         // Check the swap amounts
         uint24 expectedFee = swapVolume.exposed_calculateFee(
-            IPoolManager.SwapParams({
+            SwapParams({
                 zeroForOne: zeroForOne,
                 amountSpecified: _amountSpecified,
                 sqrtPriceLimitX96: zeroForOne ? MIN_PRICE_LIMIT : MAX_PRICE_LIMIT

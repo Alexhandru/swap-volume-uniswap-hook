@@ -10,6 +10,7 @@ import {BalanceDelta} from "v4-core/src/types/BalanceDelta.sol";
 import {BeforeSwapDelta, BeforeSwapDeltaLibrary} from "v4-core/src/types/BeforeSwapDelta.sol";
 import {CustomRevert} from "v4-core/src/libraries/CustomRevert.sol";
 import {ISwapVolume} from "./interfaces/ISwapVolume.sol";
+import {SwapParams} from "v4-core/src/types/PoolOperation.sol";
 
 /**
  * @dev Volume-based dynamic fee hook that adjusts swap fees based on transaction volume.
@@ -123,7 +124,7 @@ contract SwapVolume is ISwapVolume, BaseHook {
      * the swap amount.
      * @return The hook selector, zero delta (no hooks modifying swap amounts), and zero fee
      */
-    function _beforeSwap(address, PoolKey calldata key, IPoolManager.SwapParams calldata swapParams, bytes calldata)
+    function _beforeSwap(address, PoolKey calldata key, SwapParams calldata swapParams, bytes calldata)
         internal
         override
         returns (bytes4, BeforeSwapDelta, uint24)
@@ -139,7 +140,7 @@ contract SwapVolume is ISwapVolume, BaseHook {
      * @return calculatedFee The calculated fee as a uint24
      */
     function calculateFee(
-        IPoolManager.SwapParams calldata swapParams
+        SwapParams calldata swapParams
     ) internal view returns(uint24 calculatedFee) {
         if(swapParams.zeroForOne) {
             if(swapParams.amountSpecified < 0) {
@@ -203,12 +204,16 @@ contract SwapVolume is ISwapVolume, BaseHook {
         uint24 feeAtMinAmount,
         uint24 _defaultFee
     ) internal pure returns(uint24 calculatedFee) {
-        if(volume < minAmount){
-            return _defaultFee;
+        if(volume >= maxAmount){
+            return feeAtMaxAmount;
         }
 
-        if(volume > maxAmount){
-            return feeAtMaxAmount;
+        if(volume == minAmount){
+            return feeAtMinAmount;
+        }
+
+        if(volume < minAmount){
+            return _defaultFee;
         }
 
         uint256 deltaFee = feeAtMinAmount - feeAtMaxAmount;

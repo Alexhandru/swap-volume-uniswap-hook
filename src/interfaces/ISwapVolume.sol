@@ -42,4 +42,6 @@ interface ISwapVolume {
         uint256 minAmount1;
         uint256 maxAmount1;
     }
+
+    function getSwapVolumeParams() external view returns (SwapVolumeParams memory);
 }
