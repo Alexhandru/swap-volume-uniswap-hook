@@ -378,6 +378,19 @@ contract SwapVolumeTest is Test, Fixtures {
             currency0, currency1, IHooks(address(swapVolume)), LPFeeLibrary.DYNAMIC_FEE_FLAG, SQRT_PRICE_1_1
         );
 
+        ISwapVolume.SwapVolumeParams memory paramsOut = swapVolume.getSwapVolumeParams();
+
+        // Validate that each parameter matches the expected value.
+        assertEq(paramsOut.defaultFee, _defaultFee, "defaultFee mismatch");
+        assertEq(paramsOut.feeAtMinAmount0, _feeAtMinAmount0, "feeAtMinAmount0 mismatch");
+        assertEq(paramsOut.feeAtMaxAmount0, _feeAtMaxAmount0, "feeAtMaxAmount0 mismatch");
+        assertEq(paramsOut.feeAtMinAmount1, _feeAtMinAmount1, "feeAtMinAmount1 mismatch");
+        assertEq(paramsOut.feeAtMaxAmount1, _feeAtMaxAmount1, "feeAtMaxAmount1 mismatch");
+        assertEq(paramsOut.minAmount0, _minAmount0, "minAmount0 mismatch");
+        assertEq(paramsOut.maxAmount0, _maxAmount0, "maxAmount0 mismatch");
+        assertEq(paramsOut.minAmount1, _minAmount1, "minAmount1 mismatch");
+        assertEq(paramsOut.maxAmount1, _maxAmount1, "maxAmount1 mismatch");
+
         // Perform the swap
         swap(key, zeroForOne, _amountSpecified, ZERO_BYTES);
 

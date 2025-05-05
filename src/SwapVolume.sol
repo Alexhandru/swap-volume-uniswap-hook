@@ -82,7 +82,7 @@ contract SwapVolume is ISwapVolume, BaseHook {
      * @dev Returns the current fee parameters of the hook.
      * @return SwapVolumeParams struct containing all fee and amount threshold parameters
      */
-    function getSwapVolumeParams() external view returns (SwapVolumeParams memory) {
+    function getSwapVolumeParams() external view virtual returns (SwapVolumeParams memory) {
         return SwapVolumeParams({
             defaultFee: defaultFee,
             feeAtMinAmount0: feeAtMinAmount0,
@@ -100,7 +100,7 @@ contract SwapVolume is ISwapVolume, BaseHook {
      * @dev Sets the hook permissions. Only requires beforeSwap permission to update dynamic fees.
      * @return permissions The hook permissions
      */
-    function getHookPermissions() public pure override returns (Hooks.Permissions memory) {
+    function getHookPermissions() public pure virtual override returns (Hooks.Permissions memory) {
         return Hooks.Permissions({
             beforeInitialize: false,
             afterInitialize: false,
@@ -126,6 +126,7 @@ contract SwapVolume is ISwapVolume, BaseHook {
      */
     function _beforeSwap(address, PoolKey calldata key, SwapParams calldata swapParams, bytes calldata)
         internal
+        virtual
         override
         returns (bytes4, BeforeSwapDelta, uint24)
     {
@@ -141,7 +142,7 @@ contract SwapVolume is ISwapVolume, BaseHook {
      */
     function calculateFee(
         SwapParams calldata swapParams
-    ) internal view returns(uint24 calculatedFee) {
+    ) internal view virtual returns(uint24 calculatedFee) {
         if(swapParams.zeroForOne) {
             if(swapParams.amountSpecified < 0) {
                 calculatedFee = calculateFeePerScenario(
@@ -203,7 +204,7 @@ contract SwapVolume is ISwapVolume, BaseHook {
         uint24 feeAtMaxAmount,
         uint24 feeAtMinAmount,
         uint24 _defaultFee
-    ) internal pure returns(uint24 calculatedFee) {
+    ) internal pure virtual returns(uint24) {
         if(volume >= maxAmount){
             return feeAtMaxAmount;
         }
@@ -218,6 +219,6 @@ contract SwapVolume is ISwapVolume, BaseHook {
 
         uint256 deltaFee = feeAtMinAmount - feeAtMaxAmount;
         uint256 feeDifference = (deltaFee * (volume - minAmount)) / (maxAmount - minAmount);
-        calculatedFee = feeAtMinAmount - uint24(feeDifference);
+        return feeAtMinAmount - uint24(feeDifference);
     }
 }
