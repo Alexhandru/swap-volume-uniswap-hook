@@ -4,21 +4,20 @@ pragma solidity ^0.8.24;
 import "forge-std/Script.sol";
 import {Hooks} from "v4-core/src/libraries/Hooks.sol";
 import {IPoolManager} from "v4-core/src/interfaces/IPoolManager.sol";
-import {SwapVolume} from "../src/SwapVolume.sol";
-import {ISwapVolume} from "../src/interfaces/ISwapVolume.sol";
+import {VolumeBasedFeeHook} from "../src/VolumeBasedFeeHook.sol";
 import {Constants} from "./base/Constants.sol";
 import {HookMiner} from "v4-periphery/src/utils/HookMiner.sol";
 
-/// @notice Mines the address and deploys the SwapVolume Hook contract
-contract SwapVolumeScript is Script, Constants {
+/// @notice Mines the address and deploys the VolumeBasedFeeHook Hook contract
+contract VolumeBasedFeeHookScript is Script, Constants {
     function setUp() public {}
 
     function run() public {
-        // Only need BEFORE_SWAP_FLAG for SwapVolume
+        // Only need BEFORE_SWAP_FLAG for VolumeBasedFeeHook
         uint160 flags = uint160(Hooks.BEFORE_SWAP_FLAG);
 
-        // Define SwapVolume parameters
-        ISwapVolume.SwapVolumeParams memory params = ISwapVolume.SwapVolumeParams({
+        // Define VolumeBasedFeeHook parameters
+        VolumeBasedFeeHook.SwapVolumeParams memory params = VolumeBasedFeeHook.SwapVolumeParams({
             defaultFee: 3000,      // 0.3%
             feeAtMinAmount0: 2700, // 0.27%
             feeAtMaxAmount0: 2400, // 0.24%
@@ -33,13 +32,13 @@ contract SwapVolumeScript is Script, Constants {
         // Mine a salt that will produce a hook address with the correct flags
         bytes memory constructorArgs = abi.encode(POOLMANAGER, params);
         (address hookAddress, bytes32 salt) = 
-            HookMiner.find(CREATE2_DEPLOYER, flags, type(SwapVolume).creationCode, constructorArgs);
+            HookMiner.find(CREATE2_DEPLOYER, flags, type(VolumeBasedFeeHook).creationCode, constructorArgs);
 
         // Deploy the hook using CREATE2
         vm.broadcast();
-        SwapVolume swapVolume = new SwapVolume{salt: salt}(IPoolManager(POOLMANAGER), params);
-        require(address(swapVolume) == hookAddress, "SwapVolumeScript: hook address mismatch");
+        VolumeBasedFeeHook volumeBasedFeeHook = new VolumeBasedFeeHook{salt: salt}(IPoolManager(POOLMANAGER), params);
+        require(address(volumeBasedFeeHook) == hookAddress, "VolumeBasedFeeHookScript: hook address mismatch");
 
-        console.log("SwapVolume deployed at:", address(swapVolume));
+        console.log("VolumeBasedFeeHook deployed at:", address(volumeBasedFeeHook));
     }
 }

@@ -14,7 +14,7 @@ import {MockERC20} from "solmate/src/test/utils/mocks/MockERC20.sol";
 import {Constants} from "v4-core/src/../test/utils/Constants.sol";
 import {TickMath} from "v4-core/src/libraries/TickMath.sol";
 import {CurrencyLibrary, Currency} from "v4-core/src/types/Currency.sol";
-import {SwapVolume} from "../src/SwapVolume.sol";
+import {VolumeBasedFeeHook} from "../src/VolumeBasedFeeHook.sol";
 import {HookMiner} from "v4-periphery/src/utils/HookMiner.sol";
 import {IPositionManager} from "v4-periphery/src/interfaces/IPositionManager.sol";
 import {PositionManager} from "v4-periphery/src/PositionManager.sol";
@@ -24,11 +24,10 @@ import {DeployPermit2} from "../test/utils/forks/DeployPermit2.sol";
 import {IERC20} from "forge-std/interfaces/IERC20.sol";
 import {IPositionDescriptor} from "v4-periphery/src/interfaces/IPositionDescriptor.sol";
 import {IWETH9} from "v4-periphery/src/interfaces/external/IWETH9.sol";
-import {ISwapVolume} from "../src/interfaces/ISwapVolume.sol";
 import {ModifyLiquidityParams, SwapParams} from "v4-core/src/types/PoolOperation.sol";
 
 /// @notice Forge script for deploying v4 & hooks to anvil
-contract SwapVolumeScript is Script, DeployPermit2 {
+contract VolumeBasedFeeHookScript is Script, DeployPermit2 {
     using EasyPosm for IPositionManager;
 
     address constant CREATE2_DEPLOYER = address(0x4e59b44847b379578588920cA78FbF26c0B4956C);
@@ -43,11 +42,11 @@ contract SwapVolumeScript is Script, DeployPermit2 {
         vm.broadcast();
         manager = deployPoolManager();
 
-        // For SwapVolume, only the BEFORE_SWAP_FLAG is needed.
+        // For VolumeBasedFeeHook, only the BEFORE_SWAP_FLAG is needed.
         uint160 flags = uint160(Hooks.BEFORE_SWAP_FLAG);
 
-        // Define SwapVolume parameters
-        ISwapVolume.SwapVolumeParams memory params = ISwapVolume.SwapVolumeParams({
+        // Define VolumeBasedFeeHook parameters
+        VolumeBasedFeeHook.SwapVolumeParams memory params = VolumeBasedFeeHook.SwapVolumeParams({
             defaultFee: 3000,      // 0.3%
             feeAtMinAmount0: 2700, // 0.27%
             feeAtMaxAmount0: 2400, // 0.24%
@@ -62,12 +61,12 @@ contract SwapVolumeScript is Script, DeployPermit2 {
         // Mine a salt that will produce a hook address with the correct flags
         bytes memory constructorArgs = abi.encode(address(manager), params);
         (address hookAddress, bytes32 salt) =
-            HookMiner.find(CREATE2_DEPLOYER, flags, type(SwapVolume).creationCode, constructorArgs);
+            HookMiner.find(CREATE2_DEPLOYER, flags, type(VolumeBasedFeeHook).creationCode, constructorArgs);
 
-        // Deploy the SwapVolume hook using CREATE2
+        // Deploy the VolumeBasedFeeHook hook using CREATE2
         vm.broadcast();
-        SwapVolume swapVolume = new SwapVolume{salt: salt}(manager, params);
-        require(address(swapVolume) == hookAddress, "SwapVolumeScript: hook address mismatch");
+        VolumeBasedFeeHook VolumeBasedFeeHook = new VolumeBasedFeeHook{salt: salt}(manager, params);
+        require(address(VolumeBasedFeeHook) == hookAddress, "VolumeBasedFeeHookScript: hook address mismatch");
 
         // Deploy additional helper contracts
         vm.startBroadcast();
@@ -75,9 +74,9 @@ contract SwapVolumeScript is Script, DeployPermit2 {
         (lpRouter, swapRouter,) = deployRouters(manager);
         vm.stopBroadcast();
 
-        // Test lifecycle: create pool, add liquidity, swap using the deployed SwapVolume hook.
+        // Test lifecycle: create pool, add liquidity, swap using the deployed VolumeBasedFeeHook hook.
         vm.startBroadcast();
-        testLifecycle(address(swapVolume));
+        testLifecycle(address(VolumeBasedFeeHook));
         vm.stopBroadcast();
     }
 
@@ -129,7 +128,7 @@ contract SwapVolumeScript is Script, DeployPermit2 {
         token0.mint(msg.sender, 100_000 ether);
         token1.mint(msg.sender, 100_000 ether);
 
-        // Initialize the pool using the SwapVolume hook
+        // Initialize the pool using the VolumeBasedFeeHook hook
         int24 tickSpacing = 60;
         PoolKey memory poolKey =
             PoolKey(Currency.wrap(address(token0)), Currency.wrap(address(token1)), 3000, tickSpacing, IHooks(hook));
