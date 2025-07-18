@@ -1,6 +1,6 @@
-# SwapVolume Hook
+# VolumeBasedFeeHook Hook
 
-The **SwapVolume** hook implements dynamic fees based on swap volume. The hook adjusts fees in a tiered structure based on swap amounts:
+The **VolumeBasedFeeHook** hook implements dynamic fees based on swap volume. The hook adjusts fees in a tiered structure based on swap amounts:
 - **Below minAmount:** Uses `defaultFee`
 - **Between minAmount and maxAmount:** Uses linear interpolation between `feeAtMinAmount` and `feeAtMaxAmount`
 - **Above maxAmount:** Uses `feeAtMaxAmount`
@@ -25,17 +25,17 @@ Clone the repository and install dependencies:
 forge install
 ```
 
-## SwapVolume Hook Details
+## VolumeBasedFeeHook Hook Details
 
-- **Source:** [`src/SwapVolume.sol`](src/SwapVolume.sol)
-- **Interface:** [`src/interfaces/ISwapVolume.sol`](src/interfaces/ISwapVolume.sol)
+- **Source:** [`src/VolumeBasedFeeHook.sol`](src/VolumeBasedFeeHook.sol)
+- **Interface:** [`src/interfaces/IVolumeBasedFeeHook.sol`](src/interfaces/IVolumeBasedFeeHook.sol)
 
-The SwapVolume hook is designed to be deployed with a set of parameters encapsulated in the `ISwapVolume.SwapVolumeParams` struct.
+The VolumeBasedFeeHook hook is designed to be deployed with a set of parameters encapsulated in the `IVolumeBasedFeeHook.VolumeBasedFeeHookParams` struct.
 
 ### Example Parameters
 
 ```solidity
-ISwapVolume.SwapVolumeParams memory params = ISwapVolume.SwapVolumeParams({
+IVolumeBasedFeeHook.VolumeBasedFeeHookParams memory params = IVolumeBasedFeeHook.VolumeBasedFeeHookParams({
     defaultFee: 3000,      // 0.3%
     feeAtMinAmount0: 2700, // 0.27%
     feeAtMaxAmount0: 2400, // 0.24%
@@ -48,25 +48,25 @@ ISwapVolume.SwapVolumeParams memory params = ISwapVolume.SwapVolumeParams({
 });
 ```
 
-## Interacting with the SwapVolume Hook
+## Interacting with the VolumeBasedFeeHook Hook
 
-Several scripts are provided in the `script/` folder to deploy and interact with the SwapVolume hook. These include:
-- **Deployment via CREATE2:** [`SwapVolume.s.sol`](script/SwapVolume.s.sol)
+Several scripts are provided in the `script/` folder to deploy and interact with the VolumeBasedFeeHook hook. These include:
+- **Deployment via CREATE2:** [`VolumeBasedFeeHook.s.sol`](script/VolumeBasedFeeHook.s.sol)
 - **Local lifecycle testing (pool initialization, liquidity provision, swaps):** [`Anvil.s.sol`](script/Anvil.s.sol)
 
 ### Deploying using Forge Scripts
 
-#### Deploying the SwapVolume Hook
+#### Deploying the VolumeBasedFeeHook Hook
 
-Use the following command to deploy the SwapVolume hook (via CREATE2) on your local network:
+Use the following command to deploy the VolumeBasedFeeHook hook (via CREATE2) on your local network:
 
 ```bash
-forge script script/SwapVolume.s.sol:SwapVolumeScript --rpc-url http://localhost:8545 --private-key <YOUR_PRIVATE_KEY> --broadcast
+forge script script/VolumeBasedFeeHook.s.sol:VolumeBasedFeeHookScript --rpc-url http://localhost:8545 --private-key <YOUR_PRIVATE_KEY> --broadcast
 ```
 
 This script:
 - Mines the correct salt (using `HookMiner`) for the given parameters and flags
-- Deploys the SwapVolume hook with the provided parameters
+- Deploys the VolumeBasedFeeHook hook with the provided parameters
 - Logs the deployed hook address
 
 #### Full Lifecycle Testing on Anvil
@@ -74,13 +74,13 @@ This script:
 You can also run a full deployment and test lifecycle (pool creation, liquidity addition, and swapping) using:
 
 ```bash
-forge script script/Anvil.s.sol:SwapVolumeScript --rpc-url http://localhost:8545 --private-key <YOUR_PRIVATE_KEY> --broadcast
+forge script script/Anvil.s.sol:VolumeBasedFeeHookScript --rpc-url http://localhost:8545 --private-key <YOUR_PRIVATE_KEY> --broadcast
 ```
 
 The `Anvil.s.sol` script:
-- Deploys a pool manager and the SwapVolume hook
+- Deploys a pool manager and the VolumeBasedFeeHook hook
 - Sets up additional helper contracts (like the Position Manager and Routers)
-- Initializes a pool using the SwapVolume hook
+- Initializes a pool using the VolumeBasedFeeHook hook
 - Adds liquidity and performs a test swap for full-end-to-end verification
 
 ## Constants & Config Files
